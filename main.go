@@ -330,9 +330,7 @@ func runWithReleaseOptions(repo, prefix string, dryRun, auto bool, manualLevel b
 		if err != nil {
 			return fmt.Errorf("pre-bump completed, but cannot read commit history for CHANGELOG.md: %w", err)
 		}
-		if settings.changelogMode == changelogOn {
-			messages = releaseMessages(messages)
-		}
+		messages = releaseMessages(messages)
 		var existingChangelog []byte
 		if settings.changelogMode == changelogFull {
 			existingChangelog = nil
@@ -457,14 +455,12 @@ func runStandaloneChangelog(repo, prefix string, mode changelogMode, output io.W
 	if err != nil {
 		return fmt.Errorf("cannot read commit history for CHANGELOG.md: %w", err)
 	}
+	messages = releaseMessages(messages)
 	label := "Unreleased"
 	if mode == changelogFull {
 		label = "History"
-	} else {
-		messages = releaseMessages(messages)
-		if len(messages) == 0 {
-			return nil
-		}
+	} else if len(messages) == 0 {
+		return nil
 	}
 	changelogPath := filepath.Join(repo, "CHANGELOG.md")
 	var existing []byte

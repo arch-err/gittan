@@ -281,7 +281,7 @@ func TestRunDoesNotCreateTagWithoutRecognizedCommits(t *testing.T) {
 	}
 }
 
-func TestRunWritesDelimitedChangelogAndFiltersNonReleaseCommits(t *testing.T) {
+func TestRunWritesDelimitedChangelogWithOnlySemverCommits(t *testing.T) {
 	repo := newGitRepo(t)
 	commit(t, repo, "fix: initial change")
 	if err := runWithChangelog(repo, "v", io.Discard); err != nil {
@@ -289,13 +289,16 @@ func TestRunWritesDelimitedChangelogAndFiltersNonReleaseCommits(t *testing.T) {
 	}
 	commit(t, repo, "feat(search): add lookup")
 	commit(t, repo, "ci: update workflow")
+	commit(t, repo, "chore: update release tooling")
+	commit(t, repo, "feat:missing space")
+	commit(t, repo, "docs: remove old API\n\nBREAKING CHANGE: callers must use the new API")
 	commit(t, repo, "fix: handle missing lookup")
 	var output bytes.Buffer
 	if err := runWithChangelog(repo, "v", &output); err != nil {
 		t.Fatalf("release run returned error: %v", err)
 	}
-	if got := git(t, repo, "tag", "--list", "v0.1.0"); got != "v0.1.0" {
-		t.Fatalf("expected v0.1.0; tags output %q, run output %q", got, output.String())
+	if got := git(t, repo, "tag", "--list", "v1.0.0"); got != "v1.0.0" {
+		t.Fatalf("expected v1.0.0; tags output %q, run output %q", got, output.String())
 	}
 
 	changelog, err := os.ReadFile(filepath.Join(repo, "CHANGELOG.md"))
@@ -304,20 +307,23 @@ func TestRunWritesDelimitedChangelogAndFiltersNonReleaseCommits(t *testing.T) {
 	}
 	contents := string(changelog)
 	for _, expected := range []string{
-		"<!-- gittan:release-start v0.1.0 -->",
+		"<!-- gittan:release-start v1.0.0 -->",
 		"🐛 fix: handle missing lookup",
 		"✨ feat(search): add lookup",
-		"<!-- gittan:release-end v0.1.0 -->",
+		"💥 docs: remove old API",
+		"<!-- gittan:release-end v1.0.0 -->",
 		"<!-- gittan:release-start v0.0.1 -->",
 	} {
 		if !strings.Contains(contents, expected) {
 			t.Errorf("CHANGELOG.md does not contain %q:\n%s", expected, contents)
 		}
 	}
-	if strings.Contains(contents, "ci: update workflow") {
-		t.Fatalf("CHANGELOG.md contains a non-release commit:\n%s", contents)
+	for _, excluded := range []string{"ci: update workflow", "chore: update release tooling", "feat:missing space"} {
+		if strings.Contains(contents, excluded) {
+			t.Errorf("CHANGELOG.md contains non-release commit %q:\n%s", excluded, contents)
+		}
 	}
-	if strings.Index(contents, "v0.1.0") > strings.Index(contents, "v0.0.1") {
+	if strings.Index(contents, "v1.0.0") > strings.Index(contents, "v0.0.1") {
 		t.Fatalf("new release was not prepended:\n%s", contents)
 	}
 }
@@ -496,12 +502,15 @@ func TestStandaloneChangelogOnPrependsOnlyReleaseCommitsSinceTag(t *testing.T) {
 	}
 }
 
-func TestStandaloneChangelogFullReplacesWithAllCommitSubjectsAndFestiveEmoji(t *testing.T) {
+func TestStandaloneChangelogFullReplacesWithReleaseCommitSubjectsAndFestiveEmoji(t *testing.T) {
 	repo := newGitRepo(t)
 	commit(t, repo, "fix: first historical change")
 	git(t, repo, "tag", "0.0.1")
 	commit(t, repo, "chore: historical maintenance")
 	commit(t, repo, "feat: recent feature")
+	commit(t, repo, "ci: update workflow")
+	commit(t, repo, "feat:missing space")
+	commit(t, repo, "docs: remove old API\n\nBREAKING CHANGE: callers must use the new API")
 	path := filepath.Join(repo, "CHANGELOG.md")
 	if err := os.WriteFile(path, []byte("stale changelog contents\n"), 0o600); err != nil {
 		t.Fatalf("write old changelog: %v", err)
@@ -514,9 +523,14 @@ func TestStandaloneChangelogFullReplacesWithAllCommitSubjectsAndFestiveEmoji(t *
 		t.Fatalf("read changelog: %v", err)
 	}
 	text := string(contents)
-	for _, expected := range []string{"History", "fix: first historical change", "chore: historical maintenance", "feat: recent feature"} {
+	for _, expected := range []string{"History", "fix: first historical change", "feat: recent feature", "docs: remove old API"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("FULL changelog is missing %q:\n%s", expected, text)
+		}
+	}
+	for _, excluded := range []string{"chore: historical maintenance", "ci: update workflow", "feat:missing space"} {
+		if strings.Contains(text, excluded) {
+			t.Errorf("FULL changelog contains non-release commit %q:\n%s", excluded, text)
 		}
 	}
 	if strings.Contains(text, "stale changelog contents") {
@@ -551,11 +565,14 @@ func TestChangelogOffDoesNotModifyFileAndDryRunRules(t *testing.T) {
 	}
 }
 
-func TestBumpFullChangelogReplacesFileWithAllCommits(t *testing.T) {
+func TestBumpFullChangelogReplacesFileWithReleaseCommits(t *testing.T) {
 	repo := newGitRepo(t)
 	commit(t, repo, "fix: first release change")
 	git(t, repo, "tag", "0.1.0")
 	commit(t, repo, "chore: update release tooling")
+	commit(t, repo, "ci: update workflow")
+	commit(t, repo, "feat:missing space")
+	commit(t, repo, "docs: remove old API\n\nBREAKING CHANGE: callers must use the new API")
 	commit(t, repo, "fix: latest release change")
 	path := filepath.Join(repo, "CHANGELOG.md")
 	if err := os.WriteFile(path, []byte("old changelog entry\n"), 0o600); err != nil {
@@ -574,9 +591,14 @@ func TestBumpFullChangelogReplacesFileWithAllCommits(t *testing.T) {
 		t.Fatalf("read changelog: %v", err)
 	}
 	text := string(contents)
-	for _, expected := range []string{"0.1.1", "fix: first release change", "chore: update release tooling", "fix: latest release change"} {
+	for _, expected := range []string{"0.1.1", "fix: first release change", "docs: remove old API", "fix: latest release change"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("FULL release changelog is missing %q:\n%s", expected, text)
+		}
+	}
+	for _, excluded := range []string{"chore: update release tooling", "ci: update workflow", "feat:missing space"} {
+		if strings.Contains(text, excluded) {
+			t.Errorf("FULL release changelog contains non-release commit %q:\n%s", excluded, text)
 		}
 	}
 	if strings.Contains(text, "old changelog entry") {
