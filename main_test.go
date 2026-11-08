@@ -393,6 +393,48 @@ func TestCLIOptionsSupportAutomaticAndManualModes(t *testing.T) {
 	}
 }
 
+func TestCLIShorthandFlags(t *testing.T) {
+	options, err := parseCLIOptions([]string{"-a", "-r", "custom-repo", "-p", "v"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseCLIOptions with shorthands returned error: %v", err)
+	}
+	if options.repo != "custom-repo" || options.prefix != "v" || options.dryRun || !options.auto || !options.bump {
+		t.Fatalf("unexpected CLI options for -a -r -p: %+v", options)
+	}
+
+	options, err = parseCLIOptions([]string{"-a", "-d"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseCLIOptions with -a -d returned error: %v", err)
+	}
+	if !options.auto || !options.dryRun || !options.bump {
+		t.Fatalf("unexpected CLI options for -a -d: %+v", options)
+	}
+
+	options, err = parseCLIOptions([]string{"--major", "-d"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseCLIOptions with --major -d returned error: %v", err)
+	}
+	if options.auto || options.level != majorBump || !options.dryRun {
+		t.Fatalf("unexpected CLI options for --major -d: %+v", options)
+	}
+
+	options, err = parseCLIOptions([]string{"-c", "ON"}, io.Discard)
+	if err != nil || options.bump || options.changelogMode != changelogOn {
+		t.Fatalf("parseCLIOptions with -c ON returned %+v, %v; want standalone ON", options, err)
+	}
+
+	options, err = parseCLIOptions([]string{"-c", "full"}, io.Discard)
+	if err != nil || options.bump || options.changelogMode != changelogFull {
+		t.Fatalf("parseCLIOptions with -c full returned %+v, %v; want standalone FULL", options, err)
+	}
+
+	for _, args := range [][]string{{"-d"}, {"-a", "-d", "-c", "ON"}, {"-a", "--major"}} {
+		if _, err := parseCLIOptions(args, io.Discard); err == nil {
+			t.Errorf("parseCLIOptions(%q) should reject invalid shorthand combination", args)
+		}
+	}
+}
+
 func TestCLIChangelogModesAndStandaloneSelection(t *testing.T) {
 	tests := []struct {
 		value changelogMode

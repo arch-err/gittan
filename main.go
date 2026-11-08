@@ -125,13 +125,19 @@ func (flag *optionalBoolFlag) IsBoolFlag() bool {
 func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 	flags := flag.NewFlagSet("gittan", flag.ContinueOnError)
 	flags.SetOutput(errorOutput)
-	repo := flags.String("repo", ".", "Git repository to inspect")
-	prefix := flags.String("prefix", "", "version tag prefix (defaults to no prefix)")
-	dryRun := flags.Bool("dry-run", false, "show the proposed release without changing the repository")
-	auto := flags.Bool("auto", false, "automatically determine the version bump")
-	major := flags.Bool("major", false, "increment the major version without inspecting commit history")
-	minor := flags.Bool("minor", false, "increment the minor version without inspecting commit history")
-	patch := flags.Bool("patch", false, "increment the patch version without inspecting commit history")
+	var repo, prefix string
+	var dryRun, auto, major, minor, patch bool
+	flags.StringVar(&repo, "repo", ".", "Git repository to inspect")
+	flags.StringVar(&repo, "r", ".", "Git repository to inspect (shorthand)")
+	flags.StringVar(&prefix, "prefix", "", "version tag prefix (defaults to no prefix)")
+	flags.StringVar(&prefix, "p", "", "version tag prefix (defaults to no prefix) (shorthand)")
+	flags.BoolVar(&dryRun, "dry-run", false, "show the proposed release without changing the repository")
+	flags.BoolVar(&dryRun, "d", false, "show the proposed release without changing the repository (shorthand)")
+	flags.BoolVar(&auto, "auto", false, "automatically determine the version bump")
+	flags.BoolVar(&auto, "a", false, "automatically determine the version bump (shorthand)")
+	flags.BoolVar(&major, "major", false, "increment the major version without inspecting commit history")
+	flags.BoolVar(&minor, "minor", false, "increment the minor version without inspecting commit history")
+	flags.BoolVar(&patch, "patch", false, "increment the patch version without inspecting commit history")
 	var preBump, postBump stringListFlag
 	flags.Var(&preBump, "pre-bump", "run a pre-bump shell command (repeatable; an empty value clears configured commands)")
 	flags.Var(&postBump, "post-bump", "run a post-bump shell command (repeatable; an empty value clears configured commands)")
@@ -139,6 +145,7 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 	flags.Var(&updateChangelog, "update-changelog", "update CHANGELOG.md for this release (true or false)")
 	var changelog optionalChangelogFlag
 	flags.Var(&changelog, "changelog", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits)")
+	flags.Var(&changelog, "c", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits) (shorthand)")
 	if err := flags.Parse(args); err != nil {
 		return cliOptions{}, err
 	}
@@ -153,16 +160,16 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 		selected bool
 		level    bumpLevel
 	}{
-		{*major, majorBump},
-		{*minor, minorBump},
-		{*patch, patchBump},
+		{major, majorBump},
+		{minor, minorBump},
+		{patch, patchBump},
 	} {
 		if option.selected {
 			selected++
 			level = option.level
 		}
 	}
-	if *auto {
+	if auto {
 		selected++
 	}
 	if selected > 1 {
@@ -175,12 +182,12 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 		fmt.Fprintln(errorOutput, err)
 		return cliOptions{}, err
 	}
-	if *dryRun && selected == 0 {
+	if dryRun && selected == 0 {
 		err := errors.New("--dry-run requires an explicit --auto, --major, --minor, or --patch flag")
 		fmt.Fprintln(errorOutput, err)
 		return cliOptions{}, err
 	}
-	if *dryRun && (changelog.set || updateChangelog.set) {
+	if dryRun && (changelog.set || updateChangelog.set) {
 		err := errors.New("--dry-run cannot be combined with changelog flags")
 		fmt.Fprintln(errorOutput, err)
 		return cliOptions{}, err
@@ -188,9 +195,9 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 	bumpSelected := selected > 0
 	if !bumpSelected && !changelog.set && !updateChangelog.set {
 		bumpSelected = true
-		*auto = true
+		auto = true
 	}
-	autoMode := *auto
+	autoMode := auto
 	mode := changelog.value
 	if !changelog.set && updateChangelog.set {
 		mode = changelogOff
@@ -199,9 +206,9 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 		}
 	}
 	return cliOptions{
-		repo:          *repo,
-		prefix:        *prefix,
-		dryRun:        *dryRun,
+		repo:          repo,
+		prefix:        prefix,
+		dryRun:        dryRun,
 		bump:          bumpSelected,
 		auto:          autoMode,
 		level:         level,
