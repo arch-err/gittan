@@ -104,16 +104,3 @@ docker run --rm \
 ```
 
 To preview instead, pass `--auto --dry-run` after the image name. Hooks that push tags or commits still need registry/remote credentials and Git configuration to be made available to the container; they are not baked into the image.
-
-## Tag builds with Codeberg CI / Woodpecker
-
-`.woodpecker.yml` runs tests and `go vet` on Git tag events, then builds and pushes an image tagged with the exact Git tag. Before enabling the workflow, configure these repository variables and secrets in Woodpecker:
-
-| Name | Type | Example |
-| --- | --- | --- |
-| `GITTAN_REGISTRY` | Variable | `codeberg.org` |
-| `GITTAN_IMAGE_REPO` | Variable | `codeberg.org/OWNER/gittan` |
-| `registry_username` | Secret | Registry account or robot username |
-| `registry_password` | Secret | Registry token/password |
-
-Change the registry and image repository to match the provider you choose (for example, `docker.io/OWNER/gittan`). The runner must permit the `woodpeckerci/plugin-docker-buildx` plugin to use Docker/Buildx. The workflow publishes only the exact pushed tag; Docker image tags must satisfy Docker's tag syntax, so avoid Git tag names containing unsupported characters. The pipeline is a starting point for Woodpecker/Codeberg and can be adapted to another CI system by retaining the test-before-publish order and passing equivalent registry credentials.
