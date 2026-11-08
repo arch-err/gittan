@@ -24,7 +24,7 @@ go run . --auto --repo /path/to/repository
 go run . --auto --prefix v
 ```
 
-If automatic mode finds no release-worthy commits, it exits successfully without output in dry-run mode; a regular run prints a 👍 no-op message. Regular successful releases also print a 👍 message. Running `gittan` without flags defaults to automatic mode; there is no `bump` subcommand.
+If automatic mode finds no release-worthy commits, it exits successfully without output in dry-run mode; a regular run prints a 👍 no-op message. Regular successful releases also print a 👍 message. Running `gittan` without flags defaults to automatic mode.
 
 The default prefix is empty, so stable tags such as `1.2.3` are considered. Use `--prefix v` to select tags such as `v1.2.3`; `--prefix` must match the complete prefix. `gittan` examines all tags from `git tag --list` and uses the highest matching stable version. Only commits in the Git range after that tag through `HEAD` are considered. If no matching tag exists, all commits through `HEAD` are considered.
 
