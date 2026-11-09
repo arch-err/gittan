@@ -15,4 +15,4 @@ COPY --from=build /out/gittan /usr/local/bin/gittan
 
 WORKDIR /repo
 ENTRYPOINT ["gittan"]
-CMD ["--auto"]
+CMD ["bump", "--auto"]

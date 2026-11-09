@@ -359,40 +359,73 @@ func TestRunSupportsScopedFixAndFeatureCommits(t *testing.T) {
 }
 
 func TestCLIOptionsSupportAutomaticAndManualModes(t *testing.T) {
-	options, err := parseCLIOptions([]string{"--auto", "--repo", "project", "--prefix="}, io.Discard)
+	options, err := parseCLIOptions([]string{"tag", "--auto", "--repo", "project", "--prefix="}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseCLIOptions returned error: %v", err)
 	}
-	if options.repo != "project" || options.prefix != "" || options.dryRun || !options.auto || !options.bump {
-		t.Fatalf("unexpected CLI options: %+v", options)
+	if options.command != cmdTag || options.repo != "project" || options.prefix != "" || options.dryRun || !options.auto {
+		t.Fatalf("unexpected CLI options for tag: %+v", options)
 	}
-	options, err = parseCLIOptions([]string{"--auto"}, io.Discard)
+
+	options, err = parseCLIOptions([]string{"tag", "--auto"}, io.Discard)
 	if err != nil || options.prefix != "" {
 		t.Fatalf("default prefix should be empty: options=%+v error=%v", options, err)
 	}
-	options, err = parseCLIOptions([]string{"--auto", "--prefix", "v"}, io.Discard)
+	options, err = parseCLIOptions([]string{"tag", "--auto", "--prefix", "v"}, io.Discard)
 	if err != nil || options.prefix != "v" {
 		t.Fatalf("explicit v prefix was not retained: options=%+v error=%v", options, err)
 	}
-	options, err = parseCLIOptions([]string{"--minor", "--dry-run"}, io.Discard)
+	options, err = parseCLIOptions([]string{"tag", "--minor", "--dry-run"}, io.Discard)
 	if err != nil {
-		t.Fatalf("manual bump options returned error: %v", err)
+		t.Fatalf("manual tag options returned error: %v", err)
 	}
-	if options.auto || options.level != minorBump || !options.dryRun {
-		t.Fatalf("unexpected manual CLI options: %+v", options)
+	if options.command != cmdTag || options.auto || options.level != minorBump || !options.dryRun {
+		t.Fatalf("unexpected manual CLI options for tag: %+v", options)
 	}
-	options, err = parseCLIOptions(nil, io.Discard)
-	if err != nil || !options.auto {
-		t.Fatalf("direct invocation should retain automatic mode: options=%+v error=%v", options, err)
+	options, err = parseCLIOptions([]string{"tag"}, io.Discard)
+	if err != nil || !options.auto || options.command != cmdTag {
+		t.Fatalf("direct tag invocation should default to automatic mode: options=%+v error=%v", options, err)
 	}
-	for _, args := range [][]string{{"bump", "--auto"}, {"--auto", "--major"}, {"--major", "--minor"}, {"--dry-run"}, {"--auto", "--dry-run", "--changelog", "ON"}} {
+
+	options, err = parseCLIOptions([]string{"bump", "--auto", "--repo", "project", "--prefix="}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseCLIOptions returned error for bump: %v", err)
+	}
+	if options.command != cmdBump || options.repo != "project" || options.prefix != "" || options.dryRun || !options.auto {
+		t.Fatalf("unexpected CLI options for bump: %+v", options)
+	}
+	options, err = parseCLIOptions([]string{"bump"}, io.Discard)
+	if err != nil || !options.auto || options.command != cmdBump {
+		t.Fatalf("direct bump invocation should default to automatic mode: options=%+v error=%v", options, err)
+	}
+
+	options, err = parseCLIOptions([]string{"changelog", "--repo", "project"}, io.Discard)
+	if err != nil || options.command != cmdChangelog || options.repo != "project" || options.changelogMode != changelogOn {
+		t.Fatalf("changelog invocation returned options=%+v error=%v", options, err)
+	}
+
+	for _, args := range [][]string{
+		nil,
+		{},
+		{"unknown"},
+		{"--auto"},
+		{"tag", "--auto", "--major"},
+		{"tag", "--major", "--minor"},
+		{"tag", "--dry-run"},
+		{"tag", "--changelog", "ON"},
+		{"tag", "--pre-bump", "echo"},
+		{"changelog", "--auto"},
+		{"changelog", "--dry-run"},
+		{"bump", "--auto", "--dry-run", "--changelog", "ON"},
+		{"bump", "--dry-run"},
+	} {
 		if _, err := parseCLIOptions(args, io.Discard); err == nil {
-			t.Errorf("parseCLIOptions(%q) should reject legacy syntax or conflicting options", args)
+			t.Errorf("parseCLIOptions(%q) should reject legacy syntax, unknown verbs, or conflicting options", args)
 		}
 	}
 	var errorOutput bytes.Buffer
-	if _, err := parseCLIOptions([]string{"bump", "--auto"}, &errorOutput); err == nil {
-		t.Fatal("legacy bump subcommand should return an error")
+	if _, err := parseCLIOptions([]string{"tag", "--auto", "extra"}, &errorOutput); err == nil {
+		t.Fatal("positional argument should return an error")
 	}
 	if !strings.Contains(errorOutput.String(), "unexpected positional arguments") {
 		t.Fatalf("validation error was not written: %q", errorOutput.String())
@@ -400,45 +433,116 @@ func TestCLIOptionsSupportAutomaticAndManualModes(t *testing.T) {
 }
 
 func TestCLIShorthandFlags(t *testing.T) {
-	options, err := parseCLIOptions([]string{"-a", "-r", "custom-repo", "-p", "v"}, io.Discard)
+	options, err := parseCLIOptions([]string{"tag", "-a", "-r", "custom-repo", "-p", "v"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseCLIOptions with shorthands returned error: %v", err)
 	}
-	if options.repo != "custom-repo" || options.prefix != "v" || options.dryRun || !options.auto || !options.bump {
-		t.Fatalf("unexpected CLI options for -a -r -p: %+v", options)
+	if options.command != cmdTag || options.repo != "custom-repo" || options.prefix != "v" || options.dryRun || !options.auto {
+		t.Fatalf("unexpected CLI options for tag -a -r -p: %+v", options)
 	}
 
-	options, err = parseCLIOptions([]string{"-a", "-d"}, io.Discard)
+	options, err = parseCLIOptions([]string{"tag", "-a", "-d"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseCLIOptions with -a -d returned error: %v", err)
 	}
-	if !options.auto || !options.dryRun || !options.bump {
-		t.Fatalf("unexpected CLI options for -a -d: %+v", options)
+	if options.command != cmdTag || !options.auto || !options.dryRun {
+		t.Fatalf("unexpected CLI options for tag -a -d: %+v", options)
 	}
 
-	options, err = parseCLIOptions([]string{"--major", "-d"}, io.Discard)
+	options, err = parseCLIOptions([]string{"tag", "--major", "-d"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseCLIOptions with --major -d returned error: %v", err)
 	}
-	if options.auto || options.level != majorBump || !options.dryRun {
-		t.Fatalf("unexpected CLI options for --major -d: %+v", options)
+	if options.command != cmdTag || options.auto || options.level != majorBump || !options.dryRun {
+		t.Fatalf("unexpected CLI options for tag --major -d: %+v", options)
 	}
 
-	options, err = parseCLIOptions([]string{"-c", "ON"}, io.Discard)
-	if err != nil || options.bump || options.changelogMode != changelogOn {
-		t.Fatalf("parseCLIOptions with -c ON returned %+v, %v; want standalone ON", options, err)
+	options, err = parseCLIOptions([]string{"bump", "-a", "-r", "custom-repo", "-p", "v"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseCLIOptions with bump shorthands returned error: %v", err)
+	}
+	if options.command != cmdBump || options.repo != "custom-repo" || options.prefix != "v" || options.dryRun || !options.auto {
+		t.Fatalf("unexpected CLI options for bump -a -r -p: %+v", options)
 	}
 
-	options, err = parseCLIOptions([]string{"-c", "full"}, io.Discard)
-	if err != nil || options.bump || options.changelogMode != changelogFull {
-		t.Fatalf("parseCLIOptions with -c full returned %+v, %v; want standalone FULL", options, err)
+	options, err = parseCLIOptions([]string{"changelog", "-c", "ON"}, io.Discard)
+	if err != nil || options.command != cmdChangelog || options.changelogMode != changelogOn {
+		t.Fatalf("parseCLIOptions with changelog -c ON returned %+v, %v; want standalone ON", options, err)
 	}
 
-	for _, args := range [][]string{{"-d"}, {"-a", "-d", "-c", "ON"}, {"-a", "--major"}} {
+	options, err = parseCLIOptions([]string{"changelog", "-c", "full"}, io.Discard)
+	if err != nil || options.command != cmdChangelog || options.changelogMode != changelogFull {
+		t.Fatalf("parseCLIOptions with changelog -c full returned %+v, %v; want standalone FULL", options, err)
+	}
+
+	for _, args := range [][]string{{"tag", "-d"}, {"bump", "-a", "-d", "-c", "ON"}, {"bump", "-a", "--major"}} {
 		if _, err := parseCLIOptions(args, io.Discard); err == nil {
 			t.Errorf("parseCLIOptions(%q) should reject invalid shorthand combination", args)
 		}
 	}
+}
+
+func TestLatestCLI(t *testing.T) {
+	binary := buildGittan(t)
+	repo := newGitRepo(t)
+	commit(t, repo, "feat: add latest command test")
+	for _, tag := range []string{"0.0.0", "1.9.9", "1.10.0", "2.0.0-rc.1", "release-8.0.0", "v2.4.0"} {
+		git(t, repo, "tag", tag)
+	}
+
+	stdout, stderr, err := runGittan(t, binary, "latest", "--repo", repo)
+	if err != nil || stdout != "1.10.0\n" {
+		t.Fatalf("latest output = %q, stderr = %q, error = %v; want 1.10.0", stdout, stderr, err)
+	}
+
+	stdout, stderr, err = runGittan(t, binary, "latest", "-r", repo, "-p", "v")
+	if err != nil || stdout != "v2.4.0\n" {
+		t.Fatalf("prefixed latest output = %q, stderr = %q, error = %v; want v2.4.0", stdout, stderr, err)
+	}
+
+	zeroRepo := newGitRepo(t)
+	commit(t, zeroRepo, "docs: add zero version tag")
+	git(t, zeroRepo, "tag", "0.0.0")
+	stdout, stderr, err = runGittan(t, binary, "latest", "--repo", zeroRepo)
+	if err != nil || stdout != "0.0.0\n" {
+		t.Fatalf("zero version output = %q, stderr = %q, error = %v; want 0.0.0", stdout, stderr, err)
+	}
+
+	stdout, stderr, err = runGittan(t, binary, "latest", "--repo", repo, "--dry-run")
+	if err == nil || stdout != "" || !strings.Contains(stderr, "flag provided but not defined") {
+		t.Fatalf("latest accepted unsupported flag: stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
+	}
+
+	emptyRepo := newGitRepo(t)
+	stdout, stderr, err = runGittan(t, binary, "latest", "--repo", emptyRepo)
+	if err == nil || stdout != "" || !strings.Contains(stderr, "no matching version tag") {
+		t.Fatalf("latest without matching tags: stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
+	}
+
+	stdout, stderr, err = runGittan(t, binary, "latest", "--repo", filepath.Join(t.TempDir(), "not-a-repository"))
+	if err == nil || stdout != "" || !strings.Contains(stderr, "git") {
+		t.Fatalf("latest with invalid repository: stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
+	}
+}
+
+func buildGittan(t *testing.T) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "gittan")
+	command := exec.Command("go", "build", "-o", binary, ".")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build gittan: %v\n%s", err, output)
+	}
+	return binary
+}
+
+func runGittan(t *testing.T, binary string, args ...string) (string, string, error) {
+	t.Helper()
+	command := exec.Command(binary, args...)
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	err := command.Run()
+	return stdout.String(), stderr.String(), err
 }
 
 func TestCLIChangelogModesAndStandaloneSelection(t *testing.T) {
@@ -446,21 +550,23 @@ func TestCLIChangelogModesAndStandaloneSelection(t *testing.T) {
 		value changelogMode
 		args  []string
 	}{
-		{value: changelogOff, args: []string{"--changelog", "OFF"}},
-		{value: changelogOn, args: []string{"--changelog", "on"}},
-		{value: changelogFull, args: []string{"--changelog", "FULL"}},
+		{value: changelogOff, args: []string{"changelog", "--changelog", "OFF"}},
+		{value: changelogOn, args: []string{"changelog", "--changelog", "on"}},
+		{value: changelogFull, args: []string{"changelog", "--changelog", "FULL"}},
+		{value: changelogOn, args: []string{"changelog", "--update-changelog"}},
+		{value: changelogOff, args: []string{"changelog", "--update-changelog=false"}},
 	}
 	for _, test := range tests {
 		options, err := parseCLIOptions(test.args, io.Discard)
-		if err != nil || options.bump || options.changelogMode != test.value {
+		if err != nil || options.command != cmdChangelog || options.changelogMode != test.value {
 			t.Errorf("parseCLIOptions(%q) = %+v, %v; want standalone %s mode", test.args, options, err, test.value)
 		}
 	}
-	options, err := parseCLIOptions([]string{"--major", "--changelog", "FULL"}, io.Discard)
-	if err != nil || !options.bump || options.changelogMode != changelogFull {
+	options, err := parseCLIOptions([]string{"bump", "--major", "--changelog", "FULL"}, io.Discard)
+	if err != nil || options.command != cmdBump || options.changelogMode != changelogFull {
 		t.Fatalf("bump with changelog mode = %+v, %v; want combined release", options, err)
 	}
-	if _, err := parseCLIOptions([]string{"--changelog", "sometimes"}, io.Discard); err == nil {
+	if _, err := parseCLIOptions([]string{"changelog", "--changelog", "sometimes"}, io.Discard); err == nil {
 		t.Fatal("unsupported changelog mode should fail")
 	}
 }
@@ -558,7 +664,7 @@ func TestChangelogOffDoesNotModifyFileAndDryRunRules(t *testing.T) {
 	if got, err := os.ReadFile(path); err != nil || string(got) != "keep this\n" {
 		t.Fatalf("OFF mode changed the changelog: %q, %v", got, err)
 	}
-	for _, args := range [][]string{{"--auto", "--dry-run", "--changelog", "OFF"}, {"--dry-run"}} {
+	for _, args := range [][]string{{"bump", "--auto", "--dry-run", "--changelog", "OFF"}, {"bump", "--dry-run"}, {"tag", "--dry-run"}} {
 		if _, err := parseCLIOptions(args, io.Discard); err == nil {
 			t.Errorf("parseCLIOptions(%q) should reject dry-run usage", args)
 		}
@@ -578,7 +684,7 @@ func TestBumpFullChangelogReplacesFileWithReleaseCommits(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old changelog entry\n"), 0o600); err != nil {
 		t.Fatalf("write existing changelog: %v", err)
 	}
-	options, err := parseCLIOptions([]string{"--patch", "--repo", repo, "--changelog", "FULL"}, io.Discard)
+	options, err := parseCLIOptions([]string{"bump", "--patch", "--repo", repo, "--changelog", "FULL"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parse release options: %v", err)
 	}
@@ -897,7 +1003,7 @@ func TestCLIHooksOverrideTOMLAndSubstituteProspectiveAndCreatedTag(t *testing.T)
 		t.Fatalf("write gittan.toml: %v", err)
 	}
 	options, err := parseCLIOptions([]string{
-		"--auto", "--repo", repo,
+		"bump", "--auto", "--repo", repo,
 		"--pre-bump", "test ! -e .git/refs/tags/0.0.1 && printf '%s' %TAG% > pre-ran.txt",
 		"--post-bump", "test -e .git/refs/tags/0.0.1 && test -f CHANGELOG.md && printf '%s' %TAG% > post-ran.txt",
 		"--update-changelog",
@@ -927,7 +1033,7 @@ func TestEmptyCLIHookFlagsClearConfiguredCommands(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "gittan.toml"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write gittan.toml: %v", err)
 	}
-	options, err := parseCLIOptions([]string{"--auto", "--repo", repo, "--pre-bump=", "--post-bump="}, io.Discard)
+	options, err := parseCLIOptions([]string{"bump", "--auto", "--repo", repo, "--pre-bump=", "--post-bump="}, io.Discard)
 	if err != nil {
 		t.Fatalf("parse CLI options: %v", err)
 	}
@@ -1020,6 +1126,75 @@ func TestPostHookFailureReportsWhenChangelogIsDisabled(t *testing.T) {
 	assertTagExists(t, repo, "0.0.1")
 	if _, err := os.Stat(filepath.Join(repo, "CHANGELOG.md")); !os.IsNotExist(err) {
 		t.Fatalf("disabled changelog was unexpectedly created (stat error: %v)", err)
+	}
+}
+
+func TestRunTagCreatesTagWithoutChangelogOrHooks(t *testing.T) {
+	repo := newGitRepo(t)
+	commit(t, repo, "feat: add user profile")
+	config := "[general]\nupdate-changelog = true\n\n[pre-bump]\ncommands = [\"touch hook-pre.txt\"]\n\n[post-bump]\ncommands = [\"touch hook-post.txt\"]\n"
+	if err := os.WriteFile(filepath.Join(repo, "gittan.toml"), []byte(config), 0o600); err != nil {
+		t.Fatalf("write gittan.toml: %v", err)
+	}
+
+	var output bytes.Buffer
+	if err := runTag(repo, "", false, true, noBump, &output); err != nil {
+		t.Fatalf("runTag returned error: %v", err)
+	}
+	assertTagExists(t, repo, "0.1.0")
+	if !strings.Contains(output.String(), "👍 Created tag 0.1.0 at HEAD.") {
+		t.Fatalf("runTag output missing success message: %q", output.String())
+	}
+	if _, err := os.Stat(filepath.Join(repo, "CHANGELOG.md")); !os.IsNotExist(err) {
+		t.Fatalf("runTag unexpectedly created CHANGELOG.md (stat error: %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "hook-pre.txt")); !os.IsNotExist(err) {
+		t.Fatalf("runTag unexpectedly ran pre-bump hook (stat error: %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "hook-post.txt")); !os.IsNotExist(err) {
+		t.Fatalf("runTag unexpectedly ran post-bump hook (stat error: %v)", err)
+	}
+}
+
+func TestRunTagDryRun(t *testing.T) {
+	repo := newGitRepo(t)
+	commit(t, repo, "fix: resolve edge case")
+
+	var output bytes.Buffer
+	if err := runTag(repo, "v", true, true, noBump, &output); err != nil {
+		t.Fatalf("runTag dry-run returned error: %v", err)
+	}
+	assertTagMissing(t, repo, "v0.0.1")
+	if got, want := output.String(), "v0.0.1\n"; got != want {
+		t.Fatalf("runTag dry-run output = %q, want %q", got, want)
+	}
+}
+
+func TestRunTagNoOp(t *testing.T) {
+	repo := newGitRepo(t)
+	commit(t, repo, "docs: update guide")
+
+	var output bytes.Buffer
+	if err := runTag(repo, "", false, true, noBump, &output); err != nil {
+		t.Fatalf("runTag no-op returned error: %v", err)
+	}
+	assertTagMissing(t, repo, "0.0.1")
+	if !strings.Contains(output.String(), "👍 No release-worthy commits") {
+		t.Fatalf("runTag no-op missing message: %q", output.String())
+	}
+}
+
+func TestRunTagManualBump(t *testing.T) {
+	repo := newGitRepo(t)
+	commit(t, repo, "docs: no auto bump")
+
+	var output bytes.Buffer
+	if err := runTag(repo, "v", false, false, majorBump, &output); err != nil {
+		t.Fatalf("runTag manual bump returned error: %v", err)
+	}
+	assertTagExists(t, repo, "v1.0.0")
+	if !strings.Contains(output.String(), "👍 Created tag v1.0.0 at HEAD.") {
+		t.Fatalf("runTag manual output = %q", output.String())
 	}
 }
 

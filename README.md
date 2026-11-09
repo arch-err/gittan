@@ -6,25 +6,44 @@ gittan is short for Birgitta.
 
 ## Usage
 
-Run the automatic bump from a Git working tree, or explicitly select a version component:
+`gittan` provides four command-line verbs:
+
+- `tag`: tags a release in the Git repository without running hooks or modifying the changelog.
+- `changelog`: generates or updates `CHANGELOG.md` independently without tagging or running hooks.
+- `bump`: executes the complete release workflow: runs `--pre-bump` hooks (with the prospective release tag), creates the `tag`, updates the `changelog`, and runs `--post-bump` hooks.
+- `latest`: prints the highest matching stable version tag without changing the repository.
+
+Use `--repo` (or `-r`) to select a repository and `--prefix` (or `-p`) to filter tags by their complete prefix:
 
 ```sh
-go run . --auto
-go run . --major
-go run . --minor
-go run . --patch
+gittan latest
+gittan latest --repo /path/to/repository --prefix v
 ```
 
-Automatic mode parses commit history. Manual modes increment the selected component directly and do not inspect commit messages to choose the version; a manual bump can also update the changelog when enabled and runs the configured release hooks. Use `--dry-run` with an explicit bump flag to print only the prospective tag (and a newline), without creating a tag, changing files, or running hooks. The output is suitable for scripts:
+The tag is printed with a trailing newline. If no stable version tag matches the prefix, `latest` exits with an error and prints nothing to standard output.
+
+Run an automatic release or explicitly select a version component using `tag` or `bump`:
 
 ```sh
-NEXT_VERSION=$(gittan --auto --dry-run)
-NEXT_MINOR=$(gittan --minor --dry-run)
-go run . --auto --repo /path/to/repository
-go run . --auto --prefix v
+gittan bump --auto
+gittan bump --major
+gittan bump --minor
+gittan bump --patch
+
+gittan tag --auto
+gittan tag --major
 ```
 
-If automatic mode finds no release-worthy commits, it exits successfully without output in dry-run mode; a regular run prints a 👍 no-op message. Regular successful releases also print a 👍 message. Running `gittan` without flags defaults to automatic mode.
+Automatic mode parses commit history. Manual modes increment the selected component directly and do not inspect commit messages to choose the version; a manual `bump` can also update the changelog when enabled and runs the configured release hooks. Use `--dry-run` with an explicit bump flag to print only the prospective tag (and a newline), without creating a tag, changing files, or running hooks. The output is suitable for scripts:
+
+```sh
+NEXT_VERSION=$(gittan bump --auto --dry-run)
+NEXT_MINOR=$(gittan tag --minor --dry-run)
+gittan bump --auto --repo /path/to/repository
+gittan tag --auto --prefix v
+```
+
+If automatic mode finds no release-worthy commits, it exits successfully without output in dry-run mode; a regular run prints a 👍 no-op message. Regular successful releases also print a 👍 message. Running `gittan tag` or `gittan bump` without bump flags defaults to automatic mode.
 
 The default prefix is empty, so stable tags such as `1.2.3` are considered. Use `--prefix v` to select tags such as `v1.2.3`; `--prefix` must match the complete prefix. `gittan` examines all tags from `git tag --list` and uses the highest matching stable version. Only commits in the Git range after that tag through `HEAD` are considered. If no matching tag exists, all commits through `HEAD` are considered.
 
@@ -46,7 +65,7 @@ Types must be followed by a colon, a space, and a non-empty description; an opti
 
 ## Changelog
 
-`--changelog` accepts three case-insensitive modes. `OFF` does not change `CHANGELOG.md` and is the default; `ON` prepends an entry containing release-worthy commits since the latest matching tag (or all release-worthy commits if no tag matches); `FULL` replaces the file with release-worthy commit subjects from all history, including commits before the latest matching tag. Non-release commits such as `chore`, `ci`, and invalid messages are excluded in both modes. Use `--changelog ON` or `--changelog FULL` without a bump flag to update the changelog without creating a tag or running hooks; these standalone entries are titled `Unreleased` or `History`. Combined with a bump flag, the new tag is the entry heading. Each generated entry is delimited by HTML comments and includes commit-type emojis plus a festive emoji in the heading.
+`--changelog` accepts three case-insensitive modes. `OFF` does not change `CHANGELOG.md` and is the default; `ON` prepends an entry containing release-worthy commits since the latest matching tag (or all release-worthy commits if no tag matches); `FULL` replaces the file with release-worthy commit subjects from all history, including commits before the latest matching tag. Non-release commits such as `chore`, `ci`, and invalid messages are excluded in both modes. Use `gittan changelog --changelog ON` or `gittan changelog --changelog FULL` (or simply `gittan changelog`) to update the changelog without creating a tag or running hooks; these standalone entries are titled `Unreleased` or `History`. With `gittan bump`, the new tag is the entry heading. Each generated entry is delimited by HTML comments and includes commit-type emojis plus a festive emoji in the heading.
 
 For compatibility, `--update-changelog` maps to `ON`, `--update-changelog=false` maps to `OFF`, and `[general] update-changelog = true` in `gittan.toml` enables `ON` for releases. The `--changelog` mode overrides the TOML setting. `--dry-run` requires an explicit bump flag and cannot be combined with either changelog flag. Automatic no-ops and dry runs do not write a changelog.
 
@@ -94,7 +113,7 @@ Build the image with:
 docker build -t gittan:local .
 ```
 
-The multi-stage `Dockerfile` compiles a static Linux executable, then packages it in Alpine with `git` and CA certificates. By default, the container runs `gittan --auto`. Mount the repository and run as its owner so the tag and changelog are writable and Git recognizes the working tree:
+The multi-stage `Dockerfile` compiles a static Linux executable, then packages it in Alpine with `git` and CA certificates. By default, the container runs `gittan bump --auto`. Mount the repository and run as its owner so the tag and changelog are writable and Git recognizes the working tree:
 
 ```sh
 docker run --rm \
@@ -103,4 +122,4 @@ docker run --rm \
   gittan:local
 ```
 
-To preview instead, pass `--auto --dry-run` after the image name. Hooks that push tags or commits still need registry/remote credentials and Git configuration to be made available to the container; they are not baked into the image.
+To preview instead, pass `bump --auto --dry-run` after the image name. Hooks that push tags or commits still need registry/remote credentials and Git configuration to be made available to the container; they are not baked into the image.

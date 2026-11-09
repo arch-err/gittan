@@ -33,24 +33,44 @@ func main() {
 	if err != nil {
 		os.Exit(2)
 	}
-	if !options.bump {
+	switch options.command {
+	case cmdTag:
+		if err := runTag(options.repo, options.prefix, options.dryRun, options.auto, options.level, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "gittan:", err)
+			os.Exit(1)
+		}
+	case cmdChangelog:
 		if err := runStandaloneChangelog(options.repo, options.prefix, options.changelogMode, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "gittan:", err)
 			os.Exit(1)
 		}
-		return
-	}
-	if err := runWithReleaseOptions(options.repo, options.prefix, options.dryRun, options.auto, options.level, options.overrides, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "gittan:", err)
-		os.Exit(1)
+	case cmdBump:
+		if err := runWithReleaseOptions(options.repo, options.prefix, options.dryRun, options.auto, options.level, options.overrides, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "gittan:", err)
+			os.Exit(1)
+		}
+	case cmdLatest:
+		if err := runLatest(options.repo, options.prefix, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "gittan:", err)
+			os.Exit(1)
+		}
 	}
 }
 
+type commandKind string
+
+const (
+	cmdTag       commandKind = "tag"
+	cmdChangelog commandKind = "changelog"
+	cmdBump      commandKind = "bump"
+	cmdLatest    commandKind = "latest"
+)
+
 type cliOptions struct {
+	command       commandKind
 	repo          string
 	prefix        string
 	dryRun        bool
-	bump          bool
 	auto          bool
 	level         bumpLevel
 	changelogMode changelogMode
@@ -123,107 +143,251 @@ func (flag *optionalBoolFlag) IsBoolFlag() bool {
 }
 
 func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
-	flags := flag.NewFlagSet("gittan", flag.ContinueOnError)
-	flags.SetOutput(errorOutput)
-	var repo, prefix string
-	var dryRun, auto, major, minor, patch bool
-	flags.StringVar(&repo, "repo", ".", "Git repository to inspect")
-	flags.StringVar(&repo, "r", ".", "Git repository to inspect (shorthand)")
-	flags.StringVar(&prefix, "prefix", "", "version tag prefix (defaults to no prefix)")
-	flags.StringVar(&prefix, "p", "", "version tag prefix (defaults to no prefix) (shorthand)")
-	flags.BoolVar(&dryRun, "dry-run", false, "show the proposed release without changing the repository")
-	flags.BoolVar(&dryRun, "d", false, "show the proposed release without changing the repository (shorthand)")
-	flags.BoolVar(&auto, "auto", false, "automatically determine the version bump")
-	flags.BoolVar(&auto, "a", false, "automatically determine the version bump (shorthand)")
-	flags.BoolVar(&major, "major", false, "increment the major version without inspecting commit history")
-	flags.BoolVar(&minor, "minor", false, "increment the minor version without inspecting commit history")
-	flags.BoolVar(&patch, "patch", false, "increment the patch version without inspecting commit history")
-	var preBump, postBump stringListFlag
-	flags.Var(&preBump, "pre-bump", "run a pre-bump shell command (repeatable; an empty value clears configured commands)")
-	flags.Var(&postBump, "post-bump", "run a post-bump shell command (repeatable; an empty value clears configured commands)")
-	var updateChangelog optionalBoolFlag
-	flags.Var(&updateChangelog, "update-changelog", "update CHANGELOG.md for this release (true or false)")
-	var changelog optionalChangelogFlag
-	flags.Var(&changelog, "changelog", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits)")
-	flags.Var(&changelog, "c", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits) (shorthand)")
-	if err := flags.Parse(args); err != nil {
-		return cliOptions{}, err
-	}
-	if flags.NArg() != 0 {
-		err := errors.New("unexpected positional arguments")
+	if len(args) == 0 {
+		err := errors.New("expected subcommand: tag, changelog, bump, or latest")
 		fmt.Fprintln(errorOutput, err)
 		return cliOptions{}, err
 	}
-	selected := 0
-	level := noBump
-	for _, option := range []struct {
-		selected bool
-		level    bumpLevel
-	}{
-		{major, majorBump},
-		{minor, minorBump},
-		{patch, patchBump},
-	} {
-		if option.selected {
+
+	verb := args[0]
+	subArgs := args[1:]
+
+	switch verb {
+	case "latest":
+		flags := flag.NewFlagSet("latest", flag.ContinueOnError)
+		flags.SetOutput(errorOutput)
+		var repo, prefix string
+		flags.StringVar(&repo, "repo", ".", "Git repository to inspect")
+		flags.StringVar(&repo, "r", ".", "Git repository to inspect (shorthand)")
+		flags.StringVar(&prefix, "prefix", "", "version tag prefix (defaults to no prefix)")
+		flags.StringVar(&prefix, "p", "", "version tag prefix (defaults to no prefix) (shorthand)")
+		if err := flags.Parse(subArgs); err != nil {
+			return cliOptions{}, err
+		}
+		if flags.NArg() != 0 {
+			err := errors.New("unexpected positional arguments")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		return cliOptions{command: cmdLatest, repo: repo, prefix: prefix}, nil
+
+	case "tag":
+		flags := flag.NewFlagSet("tag", flag.ContinueOnError)
+		flags.SetOutput(errorOutput)
+		var repo, prefix string
+		var dryRun, auto, major, minor, patch bool
+		flags.StringVar(&repo, "repo", ".", "Git repository to inspect")
+		flags.StringVar(&repo, "r", ".", "Git repository to inspect (shorthand)")
+		flags.StringVar(&prefix, "prefix", "", "version tag prefix (defaults to no prefix)")
+		flags.StringVar(&prefix, "p", "", "version tag prefix (defaults to no prefix) (shorthand)")
+		flags.BoolVar(&dryRun, "dry-run", false, "show the proposed release without changing the repository")
+		flags.BoolVar(&dryRun, "d", false, "show the proposed release without changing the repository (shorthand)")
+		flags.BoolVar(&auto, "auto", false, "automatically determine the version bump")
+		flags.BoolVar(&auto, "a", false, "automatically determine the version bump (shorthand)")
+		flags.BoolVar(&major, "major", false, "increment the major version without inspecting commit history")
+		flags.BoolVar(&minor, "minor", false, "increment the minor version without inspecting commit history")
+		flags.BoolVar(&patch, "patch", false, "increment the patch version without inspecting commit history")
+		if err := flags.Parse(subArgs); err != nil {
+			return cliOptions{}, err
+		}
+		if flags.NArg() != 0 {
+			err := errors.New("unexpected positional arguments")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		selected := 0
+		level := noBump
+		for _, option := range []struct {
+			selected bool
+			level    bumpLevel
+		}{
+			{major, majorBump},
+			{minor, minorBump},
+			{patch, patchBump},
+		} {
+			if option.selected {
+				selected++
+				level = option.level
+			}
+		}
+		if auto {
 			selected++
-			level = option.level
 		}
-	}
-	if auto {
-		selected++
-	}
-	if selected > 1 {
-		err := errors.New("choose only one of --auto, --major, --minor, or --patch")
-		fmt.Fprintln(errorOutput, err)
-		return cliOptions{}, err
-	}
-	if changelog.set && updateChangelog.set {
-		err := errors.New("choose either --changelog or --update-changelog")
-		fmt.Fprintln(errorOutput, err)
-		return cliOptions{}, err
-	}
-	if dryRun && selected == 0 {
-		err := errors.New("--dry-run requires an explicit --auto, --major, --minor, or --patch flag")
-		fmt.Fprintln(errorOutput, err)
-		return cliOptions{}, err
-	}
-	if dryRun && (changelog.set || updateChangelog.set) {
-		err := errors.New("--dry-run cannot be combined with changelog flags")
-		fmt.Fprintln(errorOutput, err)
-		return cliOptions{}, err
-	}
-	bumpSelected := selected > 0
-	if !bumpSelected && !changelog.set && !updateChangelog.set {
-		bumpSelected = true
-		auto = true
-	}
-	autoMode := auto
-	mode := changelog.value
-	if !changelog.set && updateChangelog.set {
-		mode = changelogOff
-		if updateChangelog.value {
-			mode = changelogOn
+		if selected > 1 {
+			err := errors.New("choose only one of --auto, --major, --minor, or --patch")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
 		}
+		if dryRun && selected == 0 {
+			err := errors.New("--dry-run requires an explicit --auto, --major, --minor, or --patch flag")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		if selected == 0 {
+			auto = true
+		}
+		return cliOptions{
+			command: cmdTag,
+			repo:    repo,
+			prefix:  prefix,
+			dryRun:  dryRun,
+			auto:    auto,
+			level:   level,
+		}, nil
+
+	case "changelog":
+		flags := flag.NewFlagSet("changelog", flag.ContinueOnError)
+		flags.SetOutput(errorOutput)
+		var repo, prefix string
+		var updateChangelog optionalBoolFlag
+		var changelog optionalChangelogFlag
+		flags.StringVar(&repo, "repo", ".", "Git repository to inspect")
+		flags.StringVar(&repo, "r", ".", "Git repository to inspect (shorthand)")
+		flags.StringVar(&prefix, "prefix", "", "version tag prefix (defaults to no prefix)")
+		flags.StringVar(&prefix, "p", "", "version tag prefix (defaults to no prefix) (shorthand)")
+		flags.Var(&updateChangelog, "update-changelog", "update CHANGELOG.md for this release (true or false)")
+		flags.Var(&changelog, "changelog", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits)")
+		flags.Var(&changelog, "c", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits) (shorthand)")
+		if err := flags.Parse(subArgs); err != nil {
+			return cliOptions{}, err
+		}
+		if flags.NArg() != 0 {
+			err := errors.New("unexpected positional arguments")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		if changelog.set && updateChangelog.set {
+			err := errors.New("choose either --changelog or --update-changelog")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		mode := changelogOn
+		if changelog.set {
+			mode = changelog.value
+		} else if updateChangelog.set {
+			mode = changelogOff
+			if updateChangelog.value {
+				mode = changelogOn
+			}
+		}
+		return cliOptions{
+			command:       cmdChangelog,
+			repo:          repo,
+			prefix:        prefix,
+			changelogMode: mode,
+			overrides: releaseOverrides{
+				updateChangelog:    updateChangelog.value,
+				updateChangelogSet: updateChangelog.set,
+				changelogMode:      changelog.value,
+				changelogModeSet:   changelog.set,
+			},
+		}, nil
+
+	case "bump":
+		flags := flag.NewFlagSet("bump", flag.ContinueOnError)
+		flags.SetOutput(errorOutput)
+		var repo, prefix string
+		var dryRun, auto, major, minor, patch bool
+		var preBump, postBump stringListFlag
+		var updateChangelog optionalBoolFlag
+		var changelog optionalChangelogFlag
+		flags.StringVar(&repo, "repo", ".", "Git repository to inspect")
+		flags.StringVar(&repo, "r", ".", "Git repository to inspect (shorthand)")
+		flags.StringVar(&prefix, "prefix", "", "version tag prefix (defaults to no prefix)")
+		flags.StringVar(&prefix, "p", "", "version tag prefix (defaults to no prefix) (shorthand)")
+		flags.BoolVar(&dryRun, "dry-run", false, "show the proposed release without changing the repository")
+		flags.BoolVar(&dryRun, "d", false, "show the proposed release without changing the repository (shorthand)")
+		flags.BoolVar(&auto, "auto", false, "automatically determine the version bump")
+		flags.BoolVar(&auto, "a", false, "automatically determine the version bump (shorthand)")
+		flags.BoolVar(&major, "major", false, "increment the major version without inspecting commit history")
+		flags.BoolVar(&minor, "minor", false, "increment the minor version without inspecting commit history")
+		flags.BoolVar(&patch, "patch", false, "increment the patch version without inspecting commit history")
+		flags.Var(&preBump, "pre-bump", "run a pre-bump shell command (repeatable; an empty value clears configured commands)")
+		flags.Var(&postBump, "post-bump", "run a post-bump shell command (repeatable; an empty value clears configured commands)")
+		flags.Var(&updateChangelog, "update-changelog", "update CHANGELOG.md for this release (true or false)")
+		flags.Var(&changelog, "changelog", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits)")
+		flags.Var(&changelog, "c", "write CHANGELOG.md: OFF, ON (since latest tag), or FULL (all commits) (shorthand)")
+		if err := flags.Parse(subArgs); err != nil {
+			return cliOptions{}, err
+		}
+		if flags.NArg() != 0 {
+			err := errors.New("unexpected positional arguments")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		selected := 0
+		level := noBump
+		for _, option := range []struct {
+			selected bool
+			level    bumpLevel
+		}{
+			{major, majorBump},
+			{minor, minorBump},
+			{patch, patchBump},
+		} {
+			if option.selected {
+				selected++
+				level = option.level
+			}
+		}
+		if auto {
+			selected++
+		}
+		if selected > 1 {
+			err := errors.New("choose only one of --auto, --major, --minor, or --patch")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		if changelog.set && updateChangelog.set {
+			err := errors.New("choose either --changelog or --update-changelog")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		if dryRun && selected == 0 {
+			err := errors.New("--dry-run requires an explicit --auto, --major, --minor, or --patch flag")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		if dryRun && (changelog.set || updateChangelog.set) {
+			err := errors.New("--dry-run cannot be combined with changelog flags")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		if selected == 0 {
+			auto = true
+		}
+		mode := changelog.value
+		if !changelog.set && updateChangelog.set {
+			mode = changelogOff
+			if updateChangelog.value {
+				mode = changelogOn
+			}
+		}
+		return cliOptions{
+			command:       cmdBump,
+			repo:          repo,
+			prefix:        prefix,
+			dryRun:        dryRun,
+			auto:          auto,
+			level:         level,
+			changelogMode: mode,
+			overrides: releaseOverrides{
+				preCommands:        preBump.values,
+				preCommandsSet:     preBump.set,
+				postCommands:       postBump.values,
+				postCommandsSet:    postBump.set,
+				updateChangelog:    updateChangelog.value,
+				updateChangelogSet: updateChangelog.set,
+				changelogMode:      changelog.value,
+				changelogModeSet:   changelog.set,
+			},
+		}, nil
+
+	default:
+		err := fmt.Errorf("unknown command %q; expected tag, changelog, bump, or latest", verb)
+		fmt.Fprintln(errorOutput, err)
+		return cliOptions{}, err
 	}
-	return cliOptions{
-		repo:          repo,
-		prefix:        prefix,
-		dryRun:        dryRun,
-		bump:          bumpSelected,
-		auto:          autoMode,
-		level:         level,
-		changelogMode: mode,
-		overrides: releaseOverrides{
-			preCommands:        preBump.values,
-			preCommandsSet:     preBump.set,
-			postCommands:       postBump.values,
-			postCommandsSet:    postBump.set,
-			updateChangelog:    updateChangelog.value,
-			updateChangelogSet: updateChangelog.set,
-			changelogMode:      changelog.value,
-			changelogModeSet:   changelog.set,
-		},
-	}, nil
 }
 
 func run(repo string, dryRun bool, output io.Writer) error {
@@ -238,27 +402,49 @@ func runWithBumpOptions(repo, prefix string, dryRun, auto bool, manualLevel bump
 	return runWithReleaseOptions(repo, prefix, dryRun, auto, manualLevel, releaseOverrides{}, output)
 }
 
-func runWithReleaseOptions(repo, prefix string, dryRun, auto bool, manualLevel bumpLevel, overrides releaseOverrides, output io.Writer) error {
-	head, err := gitOutput(repo, "rev-parse", "--verify", "HEAD")
-	if err != nil {
-		return fmt.Errorf("cannot read repository HEAD: %w", err)
-	}
-
-	tags, err := gitOutput(repo, "tag", "--list")
+func runTag(repo, prefix string, dryRun, auto bool, manualLevel bumpLevel, output io.Writer) error {
+	tag, _, head, skip, err := determineNextRelease(repo, prefix, auto, manualLevel)
 	if err != nil {
 		return err
 	}
-	baseVersion := version{}
-	baseTag := ""
-	for _, tag := range strings.Split(tags, "\n") {
-		if !strings.HasPrefix(tag, prefix) {
-			continue
+	if skip {
+		if !dryRun {
+			fmt.Fprintln(output, "👍 No release-worthy commits since the latest matching version tag.")
 		}
-		candidate, valid := parseVersion(strings.TrimPrefix(tag, prefix))
-		if valid && (baseTag == "" || candidate.compare(baseVersion) > 0) {
-			baseVersion = candidate
-			baseTag = tag
-		}
+		return nil
+	}
+	if dryRun {
+		fmt.Fprintln(output, tag)
+		return nil
+	}
+	if _, err := gitOutput(repo, "tag", tag, head); err != nil {
+		return fmt.Errorf("cannot create tag %s: %w", tag, err)
+	}
+	fmt.Fprintf(output, "👍 Created tag %s at HEAD.\n", tag)
+	return nil
+}
+
+func runLatest(repo, prefix string, output io.Writer) error {
+	tag, _, err := latestVersionTag(repo, prefix)
+	if err != nil {
+		return err
+	}
+	if tag == "" {
+		return errors.New("no matching version tag found")
+	}
+	fmt.Fprintln(output, tag)
+	return nil
+}
+
+func determineNextRelease(repo, prefix string, auto bool, manualLevel bumpLevel) (string, string, string, bool, error) {
+	head, err := gitOutput(repo, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return "", "", "", false, fmt.Errorf("cannot read repository HEAD: %w", err)
+	}
+
+	baseTag, baseVersion, err := latestVersionTag(repo, prefix)
+	if err != nil {
+		return "", "", "", false, err
 	}
 
 	level := manualLevel
@@ -269,7 +455,7 @@ func runWithReleaseOptions(repo, prefix string, dryRun, auto bool, manualLevel b
 		}
 		log, err := gitOutput(repo, args...)
 		if err != nil {
-			return err
+			return "", "", "", false, err
 		}
 		level = noBump
 		for _, message := range strings.Split(log, "\x00") {
@@ -284,10 +470,7 @@ func runWithReleaseOptions(repo, prefix string, dryRun, auto bool, manualLevel b
 		}
 	}
 	if auto && level == noBump {
-		if !dryRun {
-			fmt.Fprintln(output, "👍 No release-worthy commits since the latest matching version tag.")
-		}
-		return nil
+		return "", baseTag, head, true, nil
 	}
 
 	next := version{}
@@ -296,16 +479,50 @@ func runWithReleaseOptions(repo, prefix string, dryRun, auto bool, manualLevel b
 	}
 	next, err = next.bump(level)
 	if err != nil {
-		return err
+		return "", "", "", false, err
 	}
 	tag := prefix + next.String()
 	if _, err := gitOutput(repo, "check-ref-format", "refs/tags/"+tag); err != nil {
-		return fmt.Errorf("invalid target tag %q: %w", tag, err)
+		return "", "", "", false, fmt.Errorf("invalid target tag %q: %w", tag, err)
 	}
 	if err := ensureTagAvailable(repo, tag); err != nil {
-		return err
+		return "", "", "", false, err
 	}
 
+	return tag, baseTag, head, false, nil
+}
+
+func latestVersionTag(repo, prefix string) (string, version, error) {
+	tags, err := gitOutput(repo, "tag", "--list")
+	if err != nil {
+		return "", version{}, err
+	}
+	baseVersion := version{}
+	baseTag := ""
+	for _, tag := range strings.Split(tags, "\n") {
+		if !strings.HasPrefix(tag, prefix) {
+			continue
+		}
+		candidate, valid := parseVersion(strings.TrimPrefix(tag, prefix))
+		if valid && (baseTag == "" || candidate.compare(baseVersion) > 0) {
+			baseVersion = candidate
+			baseTag = tag
+		}
+	}
+	return baseTag, baseVersion, nil
+}
+
+func runWithReleaseOptions(repo, prefix string, dryRun, auto bool, manualLevel bumpLevel, overrides releaseOverrides, output io.Writer) error {
+	tag, baseTag, head, skip, err := determineNextRelease(repo, prefix, auto, manualLevel)
+	if err != nil {
+		return err
+	}
+	if skip {
+		if !dryRun {
+			fmt.Fprintln(output, "👍 No release-worthy commits since the latest matching version tag.")
+		}
+		return nil
+	}
 	if dryRun {
 		fmt.Fprintln(output, tag)
 		return nil
