@@ -14,12 +14,12 @@ import (
 func TestParseVersion(t *testing.T) {
 	tests := []struct {
 		tag   string
-		want  version
+		want  semVer
 		valid bool
 	}{
-		{tag: "1.2.3", want: version{major: 1, minor: 2, patch: 3}, valid: true},
-		{tag: "0.0.0", want: version{}, valid: true},
-		{tag: "0.1.0", want: version{minor: 1}, valid: true},
+		{tag: "1.2.3", want: semVer{major: 1, minor: 2, patch: 3}, valid: true},
+		{tag: "0.0.0", want: semVer{}, valid: true},
+		{tag: "0.1.0", want: semVer{minor: 1}, valid: true},
 		{tag: "v1.2.3"},
 		{tag: "01.2.3"},
 		{tag: "+1.2.3"},
@@ -108,13 +108,13 @@ func TestChangelogEmojiUsesConventionalCommitSemantics(t *testing.T) {
 func TestVersionBumpPrecedenceAndOverflow(t *testing.T) {
 	tests := []struct {
 		name  string
-		start version
+		start semVer
 		level bumpLevel
-		want  version
+		want  semVer
 	}{
-		{name: "patch", start: version{major: 1, minor: 2, patch: 3}, level: patchBump, want: version{major: 1, minor: 2, patch: 4}},
-		{name: "minor resets patch", start: version{major: 1, minor: 2, patch: 3}, level: minorBump, want: version{major: 1, minor: 3}},
-		{name: "major resets minor and patch", start: version{major: 1, minor: 2, patch: 3}, level: majorBump, want: version{major: 2}},
+		{name: "patch", start: semVer{major: 1, minor: 2, patch: 3}, level: patchBump, want: semVer{major: 1, minor: 2, patch: 4}},
+		{name: "minor resets patch", start: semVer{major: 1, minor: 2, patch: 3}, level: minorBump, want: semVer{major: 1, minor: 3}},
+		{name: "major resets minor and patch", start: semVer{major: 1, minor: 2, patch: 3}, level: majorBump, want: semVer{major: 2}},
 	}
 
 	for _, test := range tests {
@@ -130,10 +130,10 @@ func TestVersionBumpPrecedenceAndOverflow(t *testing.T) {
 	}
 
 	max := ^uint64(0)
-	if _, err := (version{patch: max}).bump(patchBump); err == nil {
+	if _, err := (semVer{patch: max}).bump(patchBump); err == nil {
 		t.Fatal("patch overflow should return an error")
 	}
-	if _, err := (version{major: max}).bump(majorBump); err == nil {
+	if _, err := (semVer{major: max}).bump(majorBump); err == nil {
 		t.Fatal("major overflow should return an error")
 	}
 }
@@ -404,6 +404,18 @@ func TestCLIOptionsSupportAutomaticAndManualModes(t *testing.T) {
 		t.Fatalf("changelog invocation returned options=%+v error=%v", options, err)
 	}
 
+	for _, vArgs := range [][]string{
+		{"version"},
+		{"--version"},
+		{"-version"},
+		{"-v"},
+	} {
+		options, err = parseCLIOptions(vArgs, io.Discard)
+		if err != nil || options.command != cmdVersion {
+			t.Fatalf("parseCLIOptions(%q) returned options=%+v error=%v; want cmdVersion", vArgs, options, err)
+		}
+	}
+
 	for _, args := range [][]string{
 		nil,
 		{},
@@ -523,6 +535,41 @@ func TestLatestCLI(t *testing.T) {
 	if err == nil || stdout != "" || !strings.Contains(stderr, "git") {
 		t.Fatalf("latest with invalid repository: stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
 	}
+}
+
+func TestVersionCLI(t *testing.T) {
+	binary := buildGittanWithVersion(t, "1.2.3-test")
+	for _, flag := range []string{"version", "--version", "-version", "-v"} {
+		stdout, stderr, err := runGittan(t, binary, flag)
+		if err != nil || stdout != "gittan version 1.2.3-test\n" {
+			t.Fatalf("version invocation %q output = %q, stderr = %q, error = %v; want 'gittan version 1.2.3-test\\n'", flag, stdout, stderr, err)
+		}
+	}
+
+	stdout, stderr, err := runGittan(t, binary, "version", "unexpected")
+	if err == nil || stdout != "" || !strings.Contains(stderr, "unexpected positional arguments") {
+		t.Fatalf("version with positional args: stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
+	}
+}
+
+func TestRunVersion(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runVersion(&buf); err != nil {
+		t.Fatalf("runVersion returned error: %v", err)
+	}
+	if !strings.HasPrefix(buf.String(), "gittan version ") {
+		t.Fatalf("runVersion output = %q; want prefix 'gittan version '", buf.String())
+	}
+}
+
+func buildGittanWithVersion(t *testing.T, ver string) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "gittan")
+	command := exec.Command("go", "build", "-ldflags", "-X main.version="+ver, "-o", binary, ".")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build gittan with version: %v\n%s", err, output)
+	}
+	return binary
 }
 
 func buildGittan(t *testing.T) string {

@@ -9,11 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 )
 
-type version struct {
+var version = "dev"
+
+type semVer struct {
 	major uint64
 	minor uint64
 	patch uint64
@@ -54,6 +57,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "gittan:", err)
 			os.Exit(1)
 		}
+	case cmdVersion:
+		if err := runVersion(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "gittan:", err)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -64,6 +72,7 @@ const (
 	cmdChangelog commandKind = "changelog"
 	cmdBump      commandKind = "bump"
 	cmdLatest    commandKind = "latest"
+	cmdVersion   commandKind = "version"
 )
 
 type cliOptions struct {
@@ -144,7 +153,7 @@ func (flag *optionalBoolFlag) IsBoolFlag() bool {
 
 func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 	if len(args) == 0 {
-		err := errors.New("expected subcommand: tag, changelog, bump, or latest")
+		err := errors.New("expected subcommand: tag, changelog, bump, latest, or version")
 		fmt.Fprintln(errorOutput, err)
 		return cliOptions{}, err
 	}
@@ -153,6 +162,19 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 	subArgs := args[1:]
 
 	switch verb {
+	case "version", "--version", "-version", "-v":
+		flags := flag.NewFlagSet("version", flag.ContinueOnError)
+		flags.SetOutput(errorOutput)
+		if err := flags.Parse(subArgs); err != nil {
+			return cliOptions{}, err
+		}
+		if flags.NArg() != 0 {
+			err := errors.New("unexpected positional arguments")
+			fmt.Fprintln(errorOutput, err)
+			return cliOptions{}, err
+		}
+		return cliOptions{command: cmdVersion}, nil
+
 	case "latest":
 		flags := flag.NewFlagSet("latest", flag.ContinueOnError)
 		flags.SetOutput(errorOutput)
@@ -384,10 +406,48 @@ func parseCLIOptions(args []string, errorOutput io.Writer) (cliOptions, error) {
 		}, nil
 
 	default:
-		err := fmt.Errorf("unknown command %q; expected tag, changelog, bump, or latest", verb)
+		err := fmt.Errorf("unknown command %q; expected tag, changelog, bump, latest, or version", verb)
 		fmt.Fprintln(errorOutput, err)
 		return cliOptions{}, err
 	}
+}
+
+func getVersion() string {
+	if version != "" && version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			return bi.Main.Version
+		}
+		var revision string
+		var modified bool
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				revision = s.Value
+			case "vcs.modified":
+				if s.Value == "true" {
+					modified = true
+				}
+			}
+		}
+		if revision != "" {
+			if len(revision) > 7 {
+				revision = revision[:7]
+			}
+			if modified {
+				revision += "-dirty"
+			}
+			return revision
+		}
+	}
+	return version
+}
+
+func runVersion(output io.Writer) error {
+	fmt.Fprintf(output, "gittan version %s\n", getVersion())
+	return nil
 }
 
 func run(repo string, dryRun bool, output io.Writer) error {
@@ -473,7 +533,7 @@ func determineNextRelease(repo, prefix string, auto bool, manualLevel bumpLevel)
 		return "", baseTag, head, true, nil
 	}
 
-	next := version{}
+	next := semVer{}
 	if baseTag != "" {
 		next = baseVersion
 	}
@@ -492,12 +552,12 @@ func determineNextRelease(repo, prefix string, auto bool, manualLevel bumpLevel)
 	return tag, baseTag, head, false, nil
 }
 
-func latestVersionTag(repo, prefix string) (string, version, error) {
+func latestVersionTag(repo, prefix string) (string, semVer, error) {
 	tags, err := gitOutput(repo, "tag", "--list")
 	if err != nil {
-		return "", version{}, err
+		return "", semVer{}, err
 	}
-	baseVersion := version{}
+	baseVersion := semVer{}
 	baseTag := ""
 	for _, tag := range strings.Split(tags, "\n") {
 		if !strings.HasPrefix(tag, prefix) {
@@ -653,7 +713,7 @@ func runStandaloneChangelog(repo, prefix string, mode changelogMode, output io.W
 		return err
 	}
 	baseTag := ""
-	baseVersion := version{}
+	baseVersion := semVer{}
 	for _, tag := range strings.Split(tags, "\n") {
 		if !strings.HasPrefix(tag, prefix) {
 			continue
@@ -718,35 +778,35 @@ func changelogEmoji(message string) string {
 	}
 }
 
-func parseVersion(tag string) (version, bool) {
+func parseVersion(tag string) (semVer, bool) {
 	parts := strings.Split(tag, ".")
 	if len(parts) != 3 {
-		return version{}, false
+		return semVer{}, false
 	}
 	values := [3]uint64{}
 	for i, part := range parts {
 		if part == "" || (len(part) > 1 && part[0] == '0') {
-			return version{}, false
+			return semVer{}, false
 		}
 		for _, digit := range part {
 			if digit < '0' || digit > '9' {
-				return version{}, false
+				return semVer{}, false
 			}
 		}
 		value, err := strconv.ParseUint(part, 10, 64)
 		if err != nil {
-			return version{}, false
+			return semVer{}, false
 		}
 		values[i] = value
 	}
-	return version{major: values[0], minor: values[1], patch: values[2]}, true
+	return semVer{major: values[0], minor: values[1], patch: values[2]}, true
 }
 
-func (v version) String() string {
+func (v semVer) String() string {
 	return fmt.Sprintf("%d.%d.%d", v.major, v.minor, v.patch)
 }
 
-func (v version) compare(other version) int {
+func (v semVer) compare(other semVer) int {
 	if v.major != other.major {
 		if v.major > other.major {
 			return 1
@@ -768,28 +828,28 @@ func (v version) compare(other version) int {
 	return 0
 }
 
-func (v version) bump(level bumpLevel) (version, error) {
+func (v semVer) bump(level bumpLevel) (semVer, error) {
 	switch level {
 	case patchBump:
 		if v.patch == math.MaxUint64 {
-			return version{}, errors.New("patch version overflow")
+			return semVer{}, errors.New("patch version overflow")
 		}
 		v.patch++
 	case minorBump:
 		if v.minor == math.MaxUint64 {
-			return version{}, errors.New("minor version overflow")
+			return semVer{}, errors.New("minor version overflow")
 		}
 		v.minor++
 		v.patch = 0
 	case majorBump:
 		if v.major == math.MaxUint64 {
-			return version{}, errors.New("major version overflow")
+			return semVer{}, errors.New("major version overflow")
 		}
 		v.major++
 		v.minor = 0
 		v.patch = 0
 	default:
-		return version{}, errors.New("cannot bump version without a release level")
+		return semVer{}, errors.New("cannot bump version without a release level")
 	}
 	return v, nil
 }
