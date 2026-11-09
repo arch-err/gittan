@@ -1,3 +1,9 @@
+<!-- gittan:release-start 0.3.1 -->
+## 🚀 0.3.1 🌟
+
+- 🐛 fix: fix versioning better
+<!-- gittan:release-end 0.3.1 -->
+
 <!-- gittan:release-start 0.3.0 -->
 ## 🚀 0.3.0 🎉
 
