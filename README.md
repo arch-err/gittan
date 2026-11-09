@@ -4,6 +4,12 @@ gittan is short for Birgitta.
 
 `gittan` derives an opinionated semantic version from Git history or an explicit bump selection, creates a local tag at `HEAD`, and runs configured pre- and post-bump hooks. Updating `CHANGELOG.md` is opt-in.
 
+## Download
+
+Download binaries from [GitHub Releases](https://github.com/doddo/gittan/releases/latest). On Windows, choose `gittan_<version>_windows_amd64.exe` for an Intel/AMD PC or `windows_arm64.exe` for an ARM PC. On Linux, extract the archive matching your architecture and put `gittan` on your `PATH`.
+
+Git must be installed and available on `PATH`. Hooks also require `sh` (for example, from Git for Windows). Release assets include SHA-256 checksums in `checksums.txt`.
+
 ## Usage
 
 `gittan` provides command-line verbs and version flags:
@@ -113,6 +119,8 @@ make release
 ```
 
 The executable is written to `bin/gittan`. Cross-platform release archives and checksums for Linux, macOS (Darwin), and Windows are generated in `dist/` via `make release`. Run `make clean` to remove generated build and distribution directories. Go and GNU Make must be installed locally.
+
+GitHub Actions tests and builds the release packages on pull requests and pushes to `main`. Pushing a tag (for example, `git push origin 0.4.0`) also creates a GitHub Release with these packages, standalone Windows executables, checksums, and generated release notes. Re-running the workflow updates the assets on an existing release. Binary releases run independently of Docker publishing.
 
 ## Docker
 
