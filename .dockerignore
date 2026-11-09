@@ -1,4 +1,5 @@
 .git
 .idea/
 /bin/
+/dist/
 /.tmp-gittan-go/

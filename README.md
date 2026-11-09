@@ -101,9 +101,10 @@ make build
 make test
 make vet
 make fmt-check
+make release
 ```
 
-The executable is written to `bin/gittan`. Run `make clean` to remove that generated directory. Go and GNU Make must be installed locally.
+The executable is written to `bin/gittan`. Cross-platform release archives and checksums for Linux, macOS (Darwin), and Windows are generated in `dist/` via `make release`. Run `make clean` to remove generated build and distribution directories. Go and GNU Make must be installed locally.
 
 ## Docker
 
