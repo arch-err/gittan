@@ -1,3 +1,9 @@
+<!-- gittan:release-start 0.3.0 -->
+## 🚀 0.3.0 🎉
+
+- ✨ feat: add version flag
+<!-- gittan:release-end 0.3.0 -->
+
 <!-- gittan:release-start 0.2.0 -->
 ## 🚀 0.2.0 🌈
 
