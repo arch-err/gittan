@@ -6,12 +6,20 @@ gittan is short for Birgitta.
 
 ## Usage
 
-`gittan` provides four command-line verbs:
+`gittan` provides command-line verbs and version flags:
 
 - `tag`: tags a release in the Git repository without running hooks or modifying the changelog.
 - `changelog`: generates or updates `CHANGELOG.md` independently without tagging or running hooks.
 - `bump`: executes the complete release workflow: runs `--pre-bump` hooks (with the prospective release tag), creates the `tag`, updates the `changelog`, and runs `--post-bump` hooks.
 - `latest`: prints the highest matching stable version tag without changing the repository.
+- `version`: prints the application version (also supported via `--version`, `-version`, or `-v`).
+
+Use `--version` (or `-v`, or the `version` verb) to display the version:
+
+```sh
+gittan --version
+gittan version
+```
 
 Use `--repo` (or `-r`) to select a repository and `--prefix` (or `-p`) to filter tags by their complete prefix:
 
